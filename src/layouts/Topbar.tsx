@@ -11,23 +11,37 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
 interface TopbarProps {
   onToggleSidebar?: () => void;
 }
 
+const api = axios.create({
+  baseURL: "https://localhost:7144/api",
+  withCredentials: true, 
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
 export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    navigate("/");
+  const handleLogout = async () => {
+    try {
+      await api.post("/User/logout");
+    } catch (err) {
+      console.error("Logout failed:", err);
+    } finally {
+      navigate("/");
+    }
   };
 
   return (
     <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-4 sm:px-6 bg-card backdrop-blur-md border-b border-border shadow-sm transition-colors">
       {/* Left side: Hamburger + Title */}
       <div className="flex items-center gap-3">
-        {/* Hamburger for small screens */}
         <Button
           variant="ghost"
           size="icon"
@@ -37,16 +51,15 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
           <Menu className="h-6 w-6 text-foreground" />
         </Button>
 
-        {/* Dynamic Title (Tmind for small screen, full title for large) */}
         <h1 className="text-lg font-semibold text-foreground tracking-tight">
-          <span className="lg:hidden">Tmind</span>
-          <span className="hidden lg:inline">Tata Machine Intelligence Device</span>
+          <span className="lg:hidden">Gh2</span>
+          <span className="hidden lg:inline">Green Hydrogen Monitoring System</span>
         </h1>
       </div>
 
       {/* Right side actions */}
       <div className="flex items-center gap-3">
-        <ThemeToggle />
+        {/* <ThemeToggle /> */}
 
         {/* Notifications */}
         <DropdownMenu>

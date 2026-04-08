@@ -1,145 +1,84 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "@/api/api";
+import axios from "axios";
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [step, setStep] = useState<"credentials" | "otp">("credentials"); // <-- added step
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [otp, setOtp] = useState("");
-  const [errors, setErrors] = useState<{ username?: string; email?: string; password?: string; otp?: string }>({});
+  const [errors, setErrors] = useState<{
+    username?: string;
+    email?: string;
+    password?: string;
+  }>({});
 
-   
+  const api = axios.create({
+    baseURL: "https://localhost:7144/api",
+    withCredentials: true,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
 
-  // ✅ Validation logic
   const validate = () => {
-    const newErrors: { username?: string; email?: string; password?: string; otp?: string } = {};
+    const newErrors: {
+      username?: string;
+      email?: string;
+      password?: string;
+    } = {};
 
     if (mode === "signup" && !/^[A-Za-z0-9]{3,}$/.test(username)) {
-      newErrors.username = "Username must be at least 3 characters (letters or numbers only).";
+      newErrors.username =
+        "Username must be at least 3 characters (letters or numbers only).";
     }
 
     if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
-  newErrors.email = "Invalid email format";
-}
-
+      newErrors.email = "Invalid email format";
+    }
 
     if (password.length < 8) {
       newErrors.password = "Password must be at least 8 characters long";
-    }
-
-    if (step === "otp" && !/^\d{6}$/.test(otp)) {
-      newErrors.otp = "OTP must be 6 digits";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-// const handleSubmit = async (e: React.FormEvent) => {
-//   e.preventDefault();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
 
-//   if (!validate()) return;
-
-//   if (mode === "signup") {
-//     try { 
-//       const payload = {
-//         email,
-//         password
-//       };
-//       console.log("okkokokokok")
-//       const response = await api.post("/User/Login", payload);
-//       console.log("ok reached");
-//       console.log(response.data);
-//       // console.log("User signed up:", { username, email, password });
-//       // navigate("/dashboard");
-//     } catch (err) {
-//       console.error("Signup failed:", err);
-//     }
-//   }
-//   // } else {
-//   //   if (step === "credentials") {
-//   //     console.log("Credentials valid, proceed to OTP:", { email, password });
-//   //     setStep("otp");
-//   //     setOtp("");
-//   //     setErrors({});
-//   //   } else if (step === "otp") {
-//   //     console.log("OTP verified:", otp);
-//   //     navigate("/dashboard");
-//   //   }
-//   // }
-// };
-console.log(mode);
-
-
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-
-  if (!validate()) return;
-if(mode==="login"){
-  if (step === "credentials") {
-    try {
-      console.log("Sending Login Request...");
-      const payload = { email, password };
-      const response = await api.post("/User/Login", payload);
-
-      console.log("Login Success:", response.data);
-      alert(response.data.message || "Login successful!");
-      setStep("otp"); // move to OTP entry step
-    } catch (err: any) {
-      console.error("Login Failed:", err);
-      const errorMessage =
-        err.response?.data?.message ||
-        err.response?.data?.data?.message ||
-        "Something went wrong, please try again.";
-      alert(errorMessage);
-    }
-  } 
-  else if (step === "otp") {
-    try {
-      console.log("Verifying OTP...");
-      const otpPayload = { email, otp };
-      const response = await api.post("/User/OtpVerify", otpPayload);
-
-      console.log("OTP Verified:", response.data);
-      alert(response.data.message || "OTP verified successfully!");
-      // You can redirect to dashboard here
-      navigate("/Dashboard");
-    } catch (err: any) {
-      console.error("OTP Verification Failed:", err);
-      const errorMessage =
-        err.response?.data?.message ||
-        err.response?.data?.data?.message ||
-        "Invalid OTP or verification failed.";
-      alert(errorMessage);
-    }
-  }
-}else{
-  if(mode==="signup"){
-    console.log("sending Registering Request");
-    try{
-      const RegisterPAyload={
-        username:username,
-        email:email,
-        password:password
+    if (mode === "login") {
+      try {
+        const response = await api.post("/User/Login", { email, password });
+        alert(response.data.message || "Login successful!");
+        navigate("/Dashboard"); // ✅ directly redirect on success
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.message ||
+          err.response?.data?.data?.message ||
+          "Something went wrong, please try again.";
+        alert(errorMessage);
       }
-
-      const response=await api.post("/User/Register",RegisterPAyload);
-      console.log("register scuessfully",response.data);
-      setMode("login");
-
-    }catch(err:any){
-      console.log("something is wrong");
+    } else if (mode === "signup") {
+      try {
+        const response = await api.post("/User/Register", {
+          username,
+          email,
+          password,
+        });
+        console.log("Registered successfully", response.data);
+        setMode("login");
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.message || "Registration failed.";
+        alert(errorMessage);
+      }
     }
-  }
-  
-}
-};
-
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground transition-colors">
@@ -148,14 +87,12 @@ if(mode==="login"){
         className="flex flex-col gap-4 w-[90%] max-w-md bg-card border border-border rounded-2xl shadow-md p-8"
       >
         <h1 className="text-2xl font-semibold text-center mb-2">
-          {mode === "signup" ? "Create Account" : step === "credentials" ? "Welcome Back" : "Enter OTP"}
+          {mode === "signup" ? "Create Account" : "Welcome Back"}
         </h1>
         <p className="text-sm text-muted-foreground text-center mb-4">
           {mode === "signup"
             ? "Sign up to start managing your devices"
-            : step === "credentials"
-            ? "Login to access your TMind dashboard"
-            : "Enter the 6-digit OTP sent to your email"}
+            : "Login to access your TMind dashboard"}
         </p>
 
         {mode === "signup" && (
@@ -168,94 +105,50 @@ if(mode==="login"){
               onChange={(e) => setUsername(e.target.value)}
               className="w-full border border-border rounded-md p-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            {errors.username && <p className="text-red-500 text-xs mt-1">{errors.username}</p>}
+            {errors.username && (
+              <p className="text-red-500 text-xs mt-1">{errors.username}</p>
+            )}
           </div>
         )}
 
-        {(mode === "signup" || step === "credentials") && (
-          <>
-            <div>
-              <label className="block text-sm mb-1 font-medium">Email</label>
-              <input
-                type="email"
-                placeholder="Enter email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full border border-border rounded-md p-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm mb-1 font-medium">Password</label>
-              <input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full border border-border rounded-md p-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
-            </div>
-          </>
-        )}
-
-        {step === "otp" && (
         <div>
-          <label className="block text-sm mb-2 font-medium">OTP</label>
-          <div className="flex justify-between gap-2">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <input
-                key={index}
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={otp[index] || ""}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/, ""); // allow only digits
-                  if (!value) return;
-
-                  // Update OTP value
-                  const newOtp = otp.split("");
-                  newOtp[index] = value;
-                  const updatedOtp = newOtp.join("");
-                  setOtp(updatedOtp);
-
-                  // Move focus to next box
-                  const nextInput = document.getElementById(`otp-${index + 1}`);
-                  if (nextInput && value) (nextInput as HTMLInputElement).focus();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Backspace") {
-                    const newOtp = otp.split("");
-                    newOtp[index] = "";
-                    setOtp(newOtp.join(""));
-                    if (index > 0) {
-                      const prevInput = document.getElementById(`otp-${index - 1}`);
-                      (prevInput as HTMLInputElement)?.focus();
-                    }
-                  }
-                }}
-                id={`otp-${index}`}
-                className="w-12 h-12 text-center border border-border rounded-md text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            ))}
-          </div>
-
-          {errors.otp && <p className="text-red-500 text-xs mt-2">{errors.otp}</p>}
+          <label className="block text-sm mb-1 font-medium">Email</label>
+          <input
+            type="email"
+            placeholder="Enter email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border border-border rounded-md p-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          {errors.email && (
+            <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+          )}
         </div>
-      )}
+
+        <div>
+          <label className="block text-sm mb-1 font-medium">Password</label>
+          <input
+            type="password"
+            placeholder="Enter password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full border border-border rounded-md p-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          {errors.password && (
+            <p className="text-red-500 text-xs mt-1">{errors.password}</p>
+          )}
+        </div>
 
         <button
           type="submit"
           className="mt-2 w-full bg-primary text-primary-foreground py-2 rounded-md font-medium hover:bg-primary/90 transition"
         >
-          {mode === "signup" ? "Create Account" : step === "credentials" ? "Login" : "Verify OTP"}
+          {mode === "signup" ? "Create Account" : "Login"}
         </button>
 
-        {mode === "login" && step === "credentials" && (
+        {mode === "login" && (
           <p className="text-center text-sm mt-3 text-muted-foreground">
-            Don’t have an account?{" "}
+            Don't have an account?{" "}
             <span
               onClick={() => setMode("signup")}
               className="text-primary underline cursor-pointer"
@@ -269,10 +162,7 @@ if(mode==="login"){
           <p className="text-center text-sm mt-3 text-muted-foreground">
             Already have an account?{" "}
             <span
-              onClick={() => {
-                setMode("login");
-                setStep("credentials");
-              }}
+              onClick={() => setMode("login")}
               className="text-primary underline cursor-pointer"
             >
               Login here
