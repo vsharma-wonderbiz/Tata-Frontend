@@ -1,40 +1,79 @@
+import { formatDateToShort } from "@/utils/time";
 import ReactECharts from "echarts-for-react";
-import { Scale } from "lucide-react";
 
 export function ScatterChart({ data, height = 300 }: any) {
-  
-console.log(data)
-const values=data.values.map((e :any )=>e.value);
-console.log(values)
-const min = Math.min(...values);
-const max = Math.max(...values);
- 
+  if (!data?.values || data.values.length === 0) {
+    return <div>No data</div>;
+  }
 
-  if (!data?.values) return <div>No data</div>;
+  //  Safe formatter wrapper
+  const safeFormat = (input: any) => {
+    if (!input) return "NA";
+    const d = new Date(input);
+    if (isNaN(d.getTime())) return "NA";
+    return formatDateToShort(d.toDateString());
+  };
 
+  //  If endTime missing → calculate (start + 6 days)
+  const getEndDate = (start: any, end: any) => {
+    if (end) return end;
+    const d = new Date(start);
+    if (isNaN(d.getTime())) return null;
+    d.setDate(d.getDate() + 6);
+    return d;
+  };
+
+  //  Values
+  const values = data.values
+    .map((e: any) => Number(e.value))
+    .filter((v: number) => !isNaN(v));
+
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
+
+  const minWithMargin = min - (min * 0.02);
+  const maxWithMargin = max + (max * 0.02);
+
+  //  Stacks
   const stacks = [
-    ...new Set(data.values.map((d: any) => d.assetname as string)),
-  ] as string[];
+    ...new Set(data.values.map((d: any) => d.assetname)),
+  ];
 
+  //  Weeks sorted
   const weeks = [
-    ...new Set(data.values.map((d: any) => d.weekNumber as number)),
-  ] as number[];
+    ...new Set(data.values.map((d: any) => d.weekNumber)),
+  ].sort((a: number, b: number) => a - b);
 
+  //  Map week -> label
+  const weekLabelMap = new Map<number, string>();
+
+  data.values.forEach((d: any) => {
+    if (!weekLabelMap.has(d.weekNumber)) {
+      const start = safeFormat(d.startTime);
+      const end = safeFormat(getEndDate(d.startTime, d.endTime));
+
+      const label = `W-${d.weekNumber} (${start} - ${end})`;
+      weekLabelMap.set(d.weekNumber, label);
+    }
+  });
+
+  //  Series
   const series = weeks.map((week: number) => {
-    const weekData = data.values.filter((d: any) => d.weekNumber === week);
+    const weekData = data.values.filter(
+      (d: any) => d.weekNumber === week
+    );
 
     const formattedData = stacks.map((stack: string, index: number) => {
       const point = weekData.find((d: any) => d.assetname === stack);
-      return [index, point ? point.value : null];
+      return [index, point ? Number(point.value) : null];
     });
 
     return {
-      name: `Week ${week}`,
+      name: weekLabelMap.get(week) || `Week ${week}`, //  MUST match legend
       type: "scatter",
       data: formattedData,
     };
   });
-
 
   const option = {
     xAxis: {
@@ -45,24 +84,21 @@ const max = Math.max(...values);
     yAxis: {
       type: "value",
       name: "KPI Value",
-      min:min.toFixed(2),
-      max:max.toFixed(2),
-      Scale:true
+      min: minWithMargin.toFixed(1),
+      max: maxWithMargin.toFixed(1),
+      scale: true,
     },
     tooltip: {
       trigger: "item",
     },
     legend: {
-      data: weeks.map((w: number) => `Week ${w}`),
+      data: Array.from(weekLabelMap.values()),
     },
     series: series,
   };
 
-  console.log(option    )
-
   return (
     <div>
-
       <ReactECharts option={option} style={{ height }} />
     </div>
   );

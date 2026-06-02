@@ -12,7 +12,7 @@ import { ScatterChart } from "@/components/ui/ScatterChart";
 import { Stepper } from "@/components/ui/Stepper";
 import { DropdownMenu } from "@radix-ui/react-dropdown-menu";
 import { Fullscreen } from "lucide-react";
-
+import {formatDateToShort} from "../utils/time"
 
 export interface DashboardSettings {
   plantNoOfWeeks: number;
@@ -146,7 +146,7 @@ export default function Performance() {
 
   const plantChartData = [
     ...(plantAnalytics?.weeklyData.map((w) => ({
-      kpiName: `Week ${w.weekNumber}`,
+      kpiName: `W-${w.weekNumber} ${formatDateToShort(w.startTime)} ${formatDateToShort(w.endTime)}`,
       kpiValue: w.value,
       level: "plant",
     })) ?? []),

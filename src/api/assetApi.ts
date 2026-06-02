@@ -1,5 +1,6 @@
 import axios from "axios";
 
+
 export interface Plant {
   assetId: number;
   name: string;
@@ -34,22 +35,23 @@ export interface StackKpis{
     tagName:String
 }
 
-export interface AlertResponse{
-  id:number,
-  mappingId:number,
-  signalName:string,
-  value:number,
-  alarmType:string,
-  status:string,
-  createdAt:string,
-  resolvedAt:string,
-  "mapping":number
-}
+// export interface AlertResponse{
+//   id:number,
+//   mappingId:number,
+//   assetname:string,
+//   signalName:string,
+//   value:number,
+//   alarmType:string,
+//   status:string,
+//   createdAt:string,
+//   resolvedAt:string,
+//   "mapping":number
+// }
 
 
 
 const api = axios.create({
-  baseURL: "https://localhost:7144/api",
+  baseURL: import.meta.env.VITE_API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },

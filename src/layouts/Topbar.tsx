@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { toast } from "react-toastify";
 
 interface TopbarProps {
   onToggleSidebar?: () => void;
@@ -31,6 +32,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const handleLogout = async () => {
     try {
       await api.post("/User/logout");
+      toast.success("Logged Out Sucessfully");
     } catch (err) {
       console.error("Logout failed:", err);
     } finally {

@@ -7,7 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { AlertResponse } from "@/api/assetApi"
+import type { AlertResponse } from "@/api/analyticsApi"
 import { formatIsoTimestamp } from "@/utils/time";
 
 
@@ -18,6 +18,7 @@ export function DataTable({ AlertsData }: { AlertsData: AlertResponse[] }) {
 
       <TableHeader>
         <TableRow>
+          <TableHead>Asset Name</TableHead>
           <TableHead>Signal Name</TableHead>
           <TableHead>Value</TableHead>
           <TableHead>Alarm Type</TableHead>
@@ -29,6 +30,7 @@ export function DataTable({ AlertsData }: { AlertsData: AlertResponse[] }) {
       <TableBody>
         {AlertsData?.map((e) => (
           <TableRow key={e.id}>
+            <TableCell>{e.assetName}</TableCell>
             <TableCell>{e.signalName}</TableCell>
             <TableCell>{e.value}</TableCell>
             <TableCell>{e.alarmType}</TableCell>
@@ -37,7 +39,7 @@ export function DataTable({ AlertsData }: { AlertsData: AlertResponse[] }) {
                 className={
                   e.status === "Resolved"
                     ? "bg-green-300 text-green-800 px-2 py-1 rounded"
-                    : e.status === "active"
+                    : e.status === "Active"
                       ? "bg-red-100 text-red-800 px-2 py-1 rounded"
                       : "bg-gray-100 text-gray-800 px-2 py-1 rounded"
                 }

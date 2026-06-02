@@ -39,7 +39,7 @@ export const formatChartData = (
   return data.flatMap((stackObj) => {
     console.log(stackObj);
 
-    return stackObj.values.map((item) => {
+    return stackObj.values.map((item:any) => {
       const date = new Date(item.timeStamp);
 
       let formattedTime = "";
@@ -58,7 +58,7 @@ export const formatChartData = (
       }
 
       return {
-        stackName: stackObj.asseName,   // ✅ correct property
+        stackName: stackObj.asseName,   
         tagName: stackObj.tagName,
         time: formattedTime,
         value: item.value ?? 0,
@@ -88,4 +88,20 @@ export function formatIsoTimestamp(
   };
 
   return date.toLocaleString(locale, options);
+}
+
+export const toIST = (utcDateString: string): string => {
+  const date = new Date(utcDateString); // parse incoming string
+  const istOffsetMinutes = 330; // IST = UTC + 5h30m
+  const istDate = new Date(date.getTime() + istOffsetMinutes * 60 * 1000);
+  return istDate.toISOString(); // return ISO string
+};
+
+
+export function formatDateToShort(input: string): string {
+  const date = new Date(input);
+  const day = date.getUTCDate();
+  const month = date.getUTCMonth() + 1; // months are 0-based
+  const year = date.getUTCFullYear() % 100; // last two digits
+  return `${day}/${month}/${year}`;
 }

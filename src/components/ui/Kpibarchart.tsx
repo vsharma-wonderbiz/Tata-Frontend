@@ -17,7 +17,9 @@ export default function KpiBarChart({
   color = "#3b82f6",
   height = 300,
 }: KpiBarChartProps) {
+
   const names  = data.map((k) => k.kpiName.replaceAll("_", " "));
+
   const values = data.map((k) => parseFloat(k.kpiValue.toFixed(2)));
 
   const option = {
@@ -34,7 +36,7 @@ export default function KpiBarChart({
                 <div style="font-weight:600">${p.value}</div>`;
       },
     },
-    grid: { left: 12, right: 12, top: 12, bottom: 80, containLabel: true },
+    grid: { left: 12, right: 12, top: 12, bottom: 20, containLabel: true },
     xAxis: {
       type: "category",
       data: names,
@@ -43,10 +45,10 @@ export default function KpiBarChart({
       axisLabel: {
         color: "#9ca3af",
         fontSize: 11,
-        rotate: 35,
+        rotate: 0,
         interval: 0,
-        overflow: "truncate",
-        width: 80,
+        overflow: "None",
+        width: 10,
       },
       splitLine: { show: false },
     },

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { data } from "react-router-dom";
+import { toast } from "react-toastify"; // ADD THIS
 
 export interface AnalyticsPayload {
   AssetName: string;
@@ -51,56 +51,80 @@ export interface PlantKpiAnalyticsResult {
   hourlyData: HourlyDataItem[];
 }
 
-interface stackKpiVlaues{
-  startTime:string,
-  endpoint:string,
-  assetname:string,
-  weekNumber:number
-  value:number
+interface stackKpiVlaues {
+  startTime: string,
+  endpoint: string,
+  assetname: string,
+  weekNumber: number,
+  value: number
 } 
 
-export interface stackKpiAnalyticsResult{
-  kpiName:string,
-  noOfStacks:number,
-  noOfWeeks:number,
-  values:stackKpiVlaues[]
+export interface stackKpiAnalyticsResult {
+  kpiName: string,
+  noOfStacks: number,
+  noOfWeeks: number,
+  values: stackKpiVlaues[]
 }
 
-export interface AlertResponse{
-  id:number,
-  mappingId:number,
-  signalName:string,
-  value:number,
-  alarmType:string,
-  status:string,
-  createdAt:string,
-  resolvedAt:string,
-  "mapping":number
+export interface AlertResponse {
+  id: number,
+  mappingId: number,
+  assetName:string,
+  signalName: string,
+  value: number,
+  alarmType: string,
+  status: string,
+  createdAt: string,
+  resolvedAt: string,
+  mapping: number
 }
 
-
+//AXIOS INSTANCE
 const api = axios.create({
-  baseURL: "https://localhost:7144/api",
+  baseURL: import.meta.env.VITE_API_BASE_URL,
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json"
   }
 });
 
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response) {
+      if (error.response.status === 403) {
+        toast.error("Access Denied ");
+      }
+
+      // Optional (recommended)
+      if (error.response.status === 401) {
+        toast.error("Session expired. Please login again.");
+      }
+    } else {
+      toast.error("Network error. Please try again.");
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+
+
 export const getAnalyticsData = async (
   payload: AnalyticsPayload
 ): Promise<AnalyticsResponse> => {
   try {
-    console.log(payload)
+    console.log(payload);
     const res = await api.post<AnalyticsResponse>(
       "/Analytics/data",
       payload
     );
-    // console.log(res)
     return res.data;
   } catch (error) {
     console.error("Analytics API Error:", error);
     throw error;
-  }
+  } 
 };
 
 export const getKpisByStack = async (
@@ -110,7 +134,6 @@ export const getKpisByStack = async (
     const res = await api.get<KPIResponse>(
       `/Analytics/latest/${stackName}`
     );
-
     return res.data;
   } catch (error) {
     console.error("KPI API Error:", error);
@@ -124,16 +147,14 @@ export const GetPlantKpiData = async (
   try {
     const res = await api.post<PlantKpiAnalyticsResult>(
       "/Analytics/PlantKpis",
-      payload  
+      payload
     );
-
     return res.data;
   } catch (error) {
     console.error("Analytics API Error:", error);
     throw error;
   }
 };
-
 
 export const GetStackKpiData = async (
   payload: any
@@ -141,24 +162,21 @@ export const GetStackKpiData = async (
   try {
     const res = await api.post<stackKpiAnalyticsResult>(
       "/Analytics/StackKpis",
-      payload  
+      payload
     );
-
     return res.data;
   } catch (error) {
-
     console.error("Analytics API Error:", error);
     throw error;
   }
 };
 
-
 export const GetLatestAlerts = async (): Promise<AlertResponse[]> => {
-  try{
-    const res = await api.get<AlertResponse[]>("/Analytics/Alerts")
+  try {
+    const res = await api.get<AlertResponse[]>("/Analytics/Alerts");
     return res.data;
-  }catch(error){
+  } catch (error) {
     console.error("Alerts Api Error:", error);
     throw error;
   }
-}
+};

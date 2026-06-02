@@ -9,11 +9,12 @@ interface SingleSeries {
 
 interface Props {
   chartData: SingleSeries[];
+  normalized?: boolean;
 }
 
 const COLORS = ["#3b82f6", "#f97316", "#22c55e", "#a855f7", "#ef4444"];
 
-const SignalChart: React.FC<Props> = ({ chartData }) => {
+const SignalChart: React.FC<Props> = ({ chartData, normalized = false }) => {
   if (!chartData || chartData.length === 0) return null;
 
   // Detect if multi-series (compare mode) by checking distinct stackNames

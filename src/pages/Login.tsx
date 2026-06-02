@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { Toast } from "@radix-ui/react-toast";
+import { toast } from "react-toastify";
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -16,7 +18,7 @@ const Login: React.FC = () => {
   }>({});
 
   const api = axios.create({
-    baseURL: "https://localhost:7144/api",
+    baseURL: import.meta.env.VITE_API_BASE_URL,
     withCredentials: true,
     headers: {
       "Content-Type": "application/json",
@@ -54,7 +56,7 @@ const Login: React.FC = () => {
     if (mode === "login") {
       try {
         const response = await api.post("/User/Login", { email, password });
-        alert(response.data.message || "Login successful!");
+        toast.success(response.data.message || "Login successful!");
         navigate("/Dashboard"); // ✅ directly redirect on success
       } catch (err: any) {
         const errorMessage =
@@ -92,7 +94,7 @@ const Login: React.FC = () => {
         <p className="text-sm text-muted-foreground text-center mb-4">
           {mode === "signup"
             ? "Sign up to start managing your devices"
-            : "Login to access your TMind dashboard"}
+            : "Login to access your Perfomance Insight dashboard"}
         </p>
 
         {mode === "signup" && (

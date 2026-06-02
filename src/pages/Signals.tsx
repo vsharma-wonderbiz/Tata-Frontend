@@ -2,101 +2,111 @@ import React, { useState, useEffect } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import SignalChart from "@/components/ui/SignalChart";
+import { SignalMultiSelect } from "@/components/ui/SignalMultiSelect";
 
 import {
   getPlants,
   getStacksByPlant,
   getMappingsByStack,
 } from "../api/assetApi";
-
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
-
-import { getAnalyticsData, getKpisByStack } from "../api/analyticsApi";
-import { getTimeRange, formatChartData } from "../utils/time";
-
 import type { Plant, Stack, Mapping } from "../api/assetApi";
 
-// ── Loader ──────────────────────────────────────────────────────────────────
+import { getAnalyticsData, getKpisByStack } from "../api/analyticsApi";
+import type { AnalyticsResponse, KPIItem } from "../api/analyticsApi";
+
+import { getTimeRange } from "../utils/time";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+// rowId is the key fix: each compare row owns exactly one payload entry,
+// identified by rowId — NOT by AssetName or TagName (which can repeat).
+interface Payload {
+  rowId: number;
+  AssetName: string;
+  TagName: string;
+  StartTime: string;
+  EndTime: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Format helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Normal mode: one series per tagName (signals are always distinct here
+ * because the multi-select enforces uniqueness within a single stack).
+ */
+function formatToChartData(
+  responses: AnalyticsResponse[],
+  timeRange: "1h" | "24h" | "7d" | "30d" | "custom"
+): { time: string; value: number; stackName: string }[] {
+  return responses.flatMap((response) =>
+    (response.values ?? []).map((point) => ({
+      time: formatTime(point.timeStamp, timeRange),
+      value: point.value ?? 0,
+      stackName: response.tagName,
+    }))
+  );
+}
+
+/**
+ * Compare mode: series label = "StackName · TagName" so that two rows
+ * with the SAME signal on DIFFERENT stacks still produce two distinct lines.
+ */
+function formatToChartDataCompare(
+  responses: (AnalyticsResponse & { _seriesLabel: string })[],
+  timeRange: "1h" | "24h" | "7d" | "30d" | "custom"
+): { time: string; value: number; stackName: string }[] {
+  return responses.flatMap((response) =>
+    (response.values ?? []).map((point) => ({
+      time: formatTime(point.timeStamp, timeRange),
+      value: point.value ?? 0,
+      stackName: response._seriesLabel, // unique per stack+signal pair
+    }))
+  );
+}
+
+function formatTime(
+  timeStamp: string,
+  timeRange: "1h" | "24h" | "7d" | "30d" | "custom"
+): string {
+  const date = new Date(timeStamp);
+  return timeRange === "1h" || timeRange === "24h"
+    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleString([], {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+const COMPARE_COLORS = ["#3b82f6", "#f97316", "#22c55e", "#a855f7", "#ef4444"];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ChartLoader
+// ─────────────────────────────────────────────────────────────────────────────
 function ChartLoader() {
   return (
     <div className="flex flex-col items-center justify-center w-full h-full gap-3">
       <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
-      <p className="text-sm text-gray-400 dark:text-gray-500">Loading signal data…</p>
+      <p className="text-sm text-gray-400 dark:text-gray-500">
+        Loading signal data…
+      </p>
     </div>
   );
 }
 
-// ── Compare colours ──────────────────────────────────────────────────────────
-const COMPARE_COLORS = ["#3b82f6", "#f97316", "#22c55e", "#a855f7", "#ef4444"];
-
-// ── Merged chart for compare mode ───────────────────────────────────────────
-function CompareChart({
-  seriesList,
-}: {
-  seriesList: { stackName: string; data: any[]; color: string }[];
-}) {
-  if (seriesList.length === 0) return null;
-
-  // Merge all series into one array keyed by `time`
-  const merged: Record<string, any> = {};
-  seriesList.forEach(({ stackName, data }) => {
-    data.forEach((point) => {
-      if (!merged[point.time]) merged[point.time] = { time: point.time };
-      merged[point.time][stackName] = point.value;
-    });
-  });
-
-  console.log(merged)
-  const mergedData = Object.values(merged).sort((a, b) =>
-    a.time < b.time ? -1 : 1
-  );
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={mergedData}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-        <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-        <YAxis tick={{ fontSize: 11 }} />
-        <Tooltip />
-        <Legend />
-        {seriesList.map(({ stackName, color }) => (
-          <Line
-            key={stackName}
-            type="monotone"
-            dataKey={stackName}
-            stroke={color}
-            dot={false}
-            strokeWidth={2}
-          />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
-
-// ── Main component ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Signals component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function Signals() {
-
-  type Payload = {
-    AssetName: string;
-    TagName: string;
-    StartTime: string;
-    EndTime: string;
-  };
-
-
-  const [timeRange, setTimeRange] = useState<
-    "1h" | "24h" | "7d" | "30d" | "custom"
-  >("24h");
+  const [timeRange, setTimeRange] = useState<"1h" | "24h" | "7d" | "30d" | "custom">("24h");
   const [customStart, setCustomStart] = useState<Date | null>(null);
   const [customEnd, setCustomEnd] = useState<Date | null>(null);
 
@@ -106,121 +116,132 @@ export default function Signals() {
 
   const [selectedPlant, setSelectedPlant] = useState<number | "">("");
   const [selectedStack, setSelectedStack] = useState<number | "">("");
-  const [selectedSignal, setSelectedSignal] = useState<string>("");
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [kpiData, setKpiData] = useState<any[]>([]);
-  const [kpiWeek, setKpiWeek] = useState<number | null>(null);
+  const [selectedSignals, setSelectedSignals] = useState<string[]>([]);
 
-  // ── Loading state ──────────────────────────────────────────────────────────
-  const [chartLoading, setChartLoading] = useState<any>(false);
+  const [chartData, setChartData] = useState<{ time: string; value: number; stackName: string }[]>([]);
+  const [kpiData, setKpiData] = useState<KPIItem[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
 
-  // ── Compare mode state ─────────────────────────────────────────────────────
+  // ── Compare mode ──────────────────────────────────────────────────────────
   const [compareMode, setCompareMode] = useState(false);
-  const [comparePayload, SetComparepayload] = useState<Payload[]>([])
-  // Each compare stack: { stackId, stackName, signal, data, color }
+
+  // comparePayload is now keyed by rowId — one entry per compare row.
+  const [comparePayload, setComparePayload] = useState<Payload[]>([]);
+
   const [compareRows, setCompareRows] = useState<
     {
-      id: number; // unique row key
+      id: number;
       stackId: number | "";
       stackName: string;
       signals: Mapping[];
       selectedSignal: string;
-      data: any[];
       color: string;
-      loading: boolean;
     }[]
   >([]);
 
-  // console.log(compareRows)
-  // console.log(stacks);
-
-  // ── Fetch Plants ───────────────────────────────────────────────────────────
+  // ── Fetch plants on mount ─────────────────────────────────────────────────
   useEffect(() => {
-    const fetchPlants = async () => {
-      try {
-        const data = await getPlants();
-        setPlants(data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchPlants();
+    getPlants()
+      .then(setPlants)
+      .catch((err) => console.error("Failed to fetch plants:", err));
   }, []);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const buildPayload = (assetName: string, tagName: string) => {
-    let startTime: string | undefined;
-    let endTime: string | undefined;
-
+  // ── Build payload helper ──────────────────────────────────────────────────
+  const buildPayload = (
+    rowId: number,
+    assetName: string,
+    tagName: string
+  ): Payload | null => {
     if (timeRange === "custom") {
       if (!customStart || !customEnd) return null;
-      startTime = customStart.toISOString();
-      endTime = customEnd.toISOString();
-    } else {
-      const time = getTimeRange(timeRange);
-      if (!time) return null;
-      startTime = time.startTime;
-      endTime = time.endTime;
+      return {
+        rowId,
+        AssetName: assetName,
+        TagName: tagName,
+        StartTime: customStart.toISOString(),
+        EndTime: customEnd.toISOString(),
+      };
     }
-
-    return { AssetName: assetName, TagName: tagName, StartTime: startTime, EndTime: endTime };
+    const time = getTimeRange(timeRange);
+    if (!time) return null;
+    return {
+      rowId,
+      AssetName: assetName,
+      TagName: tagName,
+      StartTime: time.startTime,
+      EndTime: time.endTime,
+    };
   };
 
-  // ── Normal mode handlers ───────────────────────────────────────────────────
+  // ── Plant change ──────────────────────────────────────────────────────────
   const handlePlantChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const plantId = Number(e.target.value);
     setSelectedPlant(plantId);
+    setSelectedStack("");
+    setSelectedSignals([]);
+    setChartData([]);
+    setSignals([]);
+    setStacks([]);
+    if (!plantId) return;
     try {
       const data = await getStacksByPlant(plantId);
       setStacks(data);
-      setSignals([]);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to fetch stacks:", err);
     }
   };
 
+  // ── Stack change ──────────────────────────────────────────────────────────
   const handleStackChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const stackId = Number(e.target.value);
-    if (!stackId) return;
     setSelectedStack(stackId);
+    setSelectedSignals([]);
+    setChartData([]);
+    if (!stackId) return;
     try {
       const mappingData = await getMappingsByStack(stackId);
       setSignals(mappingData);
 
       const stack = stacks.find((s) => s.assetId === stackId);
-      if (!stack) return;
-
-      const kpiResponse = await getKpisByStack(stack.name);
-      if (!kpiResponse || !kpiResponse.data) return;
-      setKpiData(kpiResponse.data);
-      setKpiWeek(kpiResponse.week);
+      if (stack) {
+        try {
+          const kpiResponse = await getKpisByStack(stack.name);
+          if (kpiResponse?.data) setKpiData(kpiResponse.data);
+        } catch {
+          // KPIs are non-critical
+        }
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Failed to fetch stack data:", err);
     }
   };
 
-  const handleSignalChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const tagName = e.target.value;
-    setSelectedSignal(tagName);
-    if (!selectedStack || !tagName) return;
+  // ── Fetch all selected signals in parallel (normal mode) ─────────────────
+  const handleFetch = async () => {
+    if (!selectedStack || selectedSignals.length === 0) return;
+    const stack = stacks.find((s) => s.assetId === selectedStack);
+    if (!stack) return;
+
+    const payloads = selectedSignals
+      .map((tagName) => buildPayload(-1, stack.name, tagName))
+      .filter((p): p is Payload => p !== null);
+
+    if (payloads.length === 0) return;
+
+    setChartLoading(true);
     try {
-      setChartLoading(true);
-      const stack = stacks.find((s) => s.assetId === selectedStack);
-      if (!stack) return;
-      const payload = buildPayload(stack.name, tagName);
-      if (!payload) return;
-      const data = await getAnalyticsData(payload);
-      const formattedData = formatChartData([data], timeRange);
-      setChartData(formattedData);
-      console.log(chartData)
+      const responses: AnalyticsResponse[] = await Promise.all(
+        payloads.map((p) => getAnalyticsData(p))
+      );
+      setChartData(formatToChartData(responses, timeRange));
     } catch (err) {
-      console.error(err);
+      console.error("Error fetching signal data:", err);
     } finally {
       setChartLoading(false);
     }
   };
 
-  // ── Compare mode handlers ──────────────────────────────────────────────────
+  // ── Compare handlers ──────────────────────────────────────────────────────
   const addCompareRow = () => {
     setCompareRows((prev) => [
       ...prev,
@@ -230,140 +251,126 @@ export default function Signals() {
         stackName: "",
         signals: [],
         selectedSignal: "",
-        data: [],
         color: COMPARE_COLORS[prev.length % COMPARE_COLORS.length],
-        loading: false,
       },
     ]);
   };
 
   const removeCompareRow = (id: number) => {
     setCompareRows((prev) => prev.filter((r) => r.id !== id));
+    // Remove by rowId — safe regardless of stack/signal values
+    setComparePayload((prev) => prev.filter((p) => p.rowId !== id));
   };
 
   const handleCompareStackChange = async (id: number, stackId: number) => {
     const stack = stacks.find((s) => s.assetId === stackId);
     if (!stack) return;
-
     try {
       const mappingData = await getMappingsByStack(stackId);
       setCompareRows((prev) =>
         prev.map((r) =>
           r.id === id
-            ? { ...r, stackId, stackName: stack.name, signals: mappingData, selectedSignal: "", data: [] }
+            ? {
+                ...r,
+                stackId,
+                stackName: stack.name,
+                signals: mappingData,
+                selectedSignal: "",
+              }
             : r
         )
       );
-      //   SetComparepayload((prev) =>
-      //   prev.filter((p) => p.AssetName !== stack.name)
-      //  );
+      // Clear any existing payload for this row since stack changed
+      setComparePayload((prev) => prev.filter((p) => p.rowId !== id));
     } catch (err) {
-      console.error(err);
+      console.error("Failed to fetch signals for compare row:", err);
     }
   };
 
-  const handleCompareSignalChange = async (id: number, tagName: string) => {
+  const handleCompareSignalChange = (id: number, tagName: string) => {
+    const row = compareRows.find((r) => r.id === id);
+    if (!row || !row.stackName) return;
+
     setCompareRows((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, selectedSignal: tagName, loading: true } : r))
+      prev.map((r) => (r.id === id ? { ...r, selectedSignal: tagName } : r))
     );
 
-    const row = compareRows.find((r) => r.id === id);
-    if (!row || !row.stackName || !tagName) return;
+    // Build payload with rowId as the unique key.
+    // This ensures two rows with the same signal on different stacks both survive.
+    const payload = buildPayload(id, row.stackName, tagName);
+    if (!payload) return;
 
-    try {
-      const payload = buildPayload(row.stackName, tagName);
-      if (payload) {
-        SetComparepayload((prevPayload) => [...prevPayload, payload]);
-      } else {
-        return
-      }
-
-      // const data = await getAnalyticsData(payload);
-      // const formattedData = formatChartData(data.values, timeRange);
-      // setCompareRows((prev) =>
-      //   prev.map((r) => (r.id === id ? { ...r, data: formattedData, loading: false } : r))
-      // );
-    } catch (err) {
-      console.error(err);
-      setCompareRows((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, loading: false } : r))
-      );
-    }
+    setComparePayload((prev) => {
+      // Replace only this row's payload (by rowId), leave all others untouched
+      const filtered = prev.filter((p) => p.rowId !== id);
+      return [...filtered, payload];
+    });
   };
 
-  useEffect(() => {
-    console.log("comparePayload updated:", comparePayload);
-  }, [comparePayload]);
-
-
-  const getCompareAnalyticsData = async (e: React.MouseEvent<HTMLButtonElement>) => {
+  const getCompareAnalyticsData = async () => {
     if (comparePayload.length === 0) return;
-
+    setChartLoading(true);
     try {
-      setChartLoading(true);
-      const promises = comparePayload.map((p) => getAnalyticsData(p));
-      const results = await Promise.all(promises);
-      const formatted = formatChartData(results, timeRange);
-      setChartData(formatted);
-
-      // ✅ Reset all compare rows loading state
-      setCompareRows((prev) => prev.map((r) => ({ ...r, loading: false })));
+      // Attach a unique series label (StackName · TagName) so that two rows
+      // with the same TagName but different stacks render as separate lines.
+      const responses = await Promise.all(
+        comparePayload.map(async (p) => {
+          const res = await getAnalyticsData(p);
+          return {
+            ...res,
+            _seriesLabel: `${p.AssetName} · ${p.TagName}`,
+          };
+        })
+      );
+      setChartData(formatToChartDataCompare(responses, timeRange));
     } catch (err) {
-      console.error("Error fetching analytics data:", err);
-      setCompareRows((prev) => prev.map((r) => ({ ...r, loading: false })));
+      console.error("Error fetching compare data:", err);
     } finally {
       setChartLoading(false);
     }
   };
 
-
   const handleClearCompare = () => {
     setCompareRows([]);
-    SetComparepayload([]);
+    setComparePayload([]);
     setChartData([]);
   };
 
-  useEffect(() => {
-    console.log("chartData updated:", chartData);
-  }, [chartData]);
-
-
-
-  const compareSeriesList = compareRows
-    .filter((r) => r.data.length > 0)
-    .map((r) => ({ stackName: r.stackName, data: r.data, color: r.color }));
-
-  const isCompareChartLoading = compareRows.some((r) => r.loading);
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 space-y-6 min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
-          Signals
-        </h2>
-
-        {/* Compare toggle */}
+        <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">Signals</h2>
         <button
           onClick={() => {
             setCompareMode((v) => !v);
             setCompareRows([]);
+            setComparePayload([]);
+            setChartData([]);
           }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${compareMode
-            ? "bg-blue-600 text-white hover:bg-blue-700"
-            : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-            }`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            compareMode
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+          }`}
         >
           {compareMode ? "✕ Exit Compare" : "⇄ Compare Signals"}
         </button>
       </div>
 
-      {/* ── Filter bar ── */}
-      <div className="flex flex-wrap items-end gap-6 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow justify-between">
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-start gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow">
         {/* Plant */}
-        <div className="flex flex-1 flex-col gap-1">
+        <div className="flex flex-1 flex-col gap-1 min-w-[160px]">
           <label className="text-sm text-gray-500">Plant</label>
-          <select onChange={handlePlantChange} className="px-3 py-2 rounded-lg border">
+          <select
+            value={selectedPlant}
+            onChange={handlePlantChange}
+            className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+          >
             <option value="">Select Plant</option>
             {plants.map((plant) => (
               <option key={plant.assetId} value={plant.assetId}>
@@ -373,11 +380,16 @@ export default function Signals() {
           </select>
         </div>
 
-        {/* Stack — hidden in compare mode (each row has its own) */}
+        {/* Stack — hidden in compare mode */}
         {!compareMode && (
-          <div className="flex flex-1 flex-col gap-1">
+          <div className="flex flex-1 flex-col gap-1 min-w-[160px]">
             <label className="text-sm text-gray-500">Stack</label>
-            <select onChange={handleStackChange} className="px-3 py-2 rounded-lg border">
+            <select
+              value={selectedStack}
+              onChange={handleStackChange}
+              disabled={stacks.length === 0}
+              className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 disabled:opacity-50"
+            >
               <option value="">Select Stack</option>
               {stacks.map((stack) => (
                 <option key={stack.assetId} value={stack.assetId}>
@@ -388,28 +400,23 @@ export default function Signals() {
           </div>
         )}
 
-        {/* Signal — hidden in compare mode */}
+        {/* Multi-signal checkbox dropdown — normal mode only */}
         {!compareMode && (
-          <div className="flex flex-1 flex-col gap-1">
-            <label className="text-sm text-gray-500">Signals</label>
-            <select onChange={handleSignalChange} className="px-3 py-2 rounded-lg border">
-              <option value="">Select Signal</option>
-              {signals.map((signal) => (
-                <option key={signal.mappingId} value={signal.tagName}>
-                  {signal.tagName}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SignalMultiSelect
+            signals={signals}
+            selectedSignals={selectedSignals}
+            onChange={setSelectedSignals}
+            disabled={signals.length === 0}
+          />
         )}
 
         {/* Time Range */}
-        <div className="flex flex-1 flex-col gap-1">
+        <div className="flex flex-1 flex-col gap-1 min-w-[160px]">
           <label className="text-sm text-gray-500">Time Range</label>
           <select
             value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value as any)}
-            className="px-3 py-2 rounded-lg border"
+            onChange={(e) => setTimeRange(e.target.value as typeof timeRange)}
+            className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
           >
             <option value="1h">Last 1 Hour</option>
             <option value="24h">Last 24 Hours</option>
@@ -417,39 +424,65 @@ export default function Signals() {
             <option value="30d">Last 30 Days</option>
             <option value="custom">Custom Range</option>
           </select>
-
           {timeRange === "custom" && (
             <div className="flex gap-2 mt-1">
-              <DatePicker selected={customStart} onChange={setCustomStart} placeholderText="Start" />
-              <DatePicker selected={customEnd} onChange={setCustomEnd} placeholderText="End" />
+              <DatePicker
+                selected={customStart}
+                onChange={setCustomStart}
+                placeholderText="Start"
+                className="px-2 py-1.5 border rounded-lg text-sm w-full"
+              />
+              <DatePicker
+                selected={customEnd}
+                onChange={setCustomEnd}
+                placeholderText="End"
+                className="px-2 py-1.5 border rounded-lg text-sm w-full"
+              />
             </div>
           )}
         </div>
+
+        {/* Fetch button — normal mode only */}
+        {!compareMode && (
+          <div className="flex flex-col justify-end">
+            <label className="text-sm text-gray-500 invisible select-none">.</label>
+            <button
+              onClick={handleFetch}
+              disabled={selectedSignals.length === 0 || !selectedStack}
+              className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium
+                transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Fetch Data
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── Compare rows ── */}
+      {/* Compare rows */}
       {compareMode && (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow space-y-3">
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-              Select stacks &amp; signal to compare
+              Select stacks &amp; signals to compare
             </h3>
             <div className="flex gap-3">
               <button
                 onClick={addCompareRow}
-                className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 transition-colors"
               >
                 + Add Stack
               </button>
-
               <button
                 onClick={getCompareAnalyticsData}
-                className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                disabled={comparePayload.length === 0}
+                className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Fetch
               </button>
-
-              <button onClick={handleClearCompare} className="px-3 py-1.5 rounded-lg bg-red-50 text-red-500 text-sm font-medium hover:bg-red-100 transition-colors">
+              <button
+                onClick={handleClearCompare}
+                className="px-3 py-1.5 rounded-lg bg-red-50 text-red-500 text-sm font-medium hover:bg-red-100 transition-colors"
+              >
                 ✕ Clear All
               </button>
             </div>
@@ -462,20 +495,23 @@ export default function Signals() {
           )}
 
           {compareRows.map((row, idx) => (
-            <div key={row.id} className="flex flex-wrap items-end gap-4 border rounded-xl p-3 dark:border-gray-700">
-              {/* Colour swatch */}
+            <div
+              key={row.id}
+              className="flex flex-wrap items-end gap-4 border rounded-xl p-3 dark:border-gray-700"
+            >
               <div
                 className="w-4 h-4 rounded-full mt-6 flex-shrink-0"
                 style={{ backgroundColor: row.color }}
               />
 
-              {/* Stack select */}
               <div className="flex flex-1 flex-col gap-1 min-w-[160px]">
                 <label className="text-xs text-gray-500">Stack {idx + 1}</label>
                 <select
                   value={row.stackId}
-                  onChange={(e) => handleCompareStackChange(row.id, Number(e.target.value))}
-                  className="px-3 py-2 rounded-lg border text-sm"
+                  onChange={(e) =>
+                    handleCompareStackChange(row.id, Number(e.target.value))
+                  }
+                  className="px-3 py-2 rounded-lg border text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 >
                   <option value="">Select Stack</option>
                   {stacks.map((stack) => (
@@ -486,14 +522,15 @@ export default function Signals() {
                 </select>
               </div>
 
-              {/* Signal select */}
               <div className="flex flex-1 flex-col gap-1 min-w-[160px]">
                 <label className="text-xs text-gray-500">Signal</label>
                 <select
                   value={row.selectedSignal}
-                  onChange={(e) => handleCompareSignalChange(row.id, e.target.value)}
+                  onChange={(e) =>
+                    handleCompareSignalChange(row.id, e.target.value)
+                  }
                   disabled={row.signals.length === 0}
-                  className="px-3 py-2 rounded-lg border text-sm disabled:opacity-50"
+                  className="px-3 py-2 rounded-lg border text-sm disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
                 >
                   <option value="">Select Signal</option>
                   {row.signals.map((signal) => (
@@ -504,11 +541,9 @@ export default function Signals() {
                 </select>
               </div>
 
-              {/* Remove */}
               <button
                 onClick={() => removeCompareRow(row.id)}
                 className="mb-0.5 px-2 py-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm"
-                title="Remove row"
               >
                 ✕
               </button>
@@ -517,50 +552,37 @@ export default function Signals() {
         </div>
       )}
 
-      {/* ── Chart ── */}
+      {/* Chart — same SignalChart component for both modes */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow">
         <h3 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
           {compareMode ? "Signal Comparison" : "Signal Trends"}
         </h3>
-
-        {/* <div className="w-full h-[400px]">
-          {compareMode ? (
-            isCompareChartLoading ? (
-              <ChartLoader />
-            ) : compareSeriesList.length > 0 ? (
-              <CompareChart seriesList={compareSeriesList} />
-            ) : (
-              <div className="flex items-center justify-center h-full text-sm text-gray-400 dark:text-gray-500">
-                Add stacks and select signals above to compare them here.
-              </div>
-            )
-          ) : chartLoading ? (
-            <ChartLoader />
-          ) : (
-            <SignalChart chartData={chartData} />
-          )}
-        </div> */}
-
         <div className="w-full h-[400px]">
-          {chartLoading || isCompareChartLoading ? (
+          {chartLoading ? (
             <ChartLoader />
           ) : chartData.length > 0 ? (
             <SignalChart chartData={chartData} />
           ) : (
             <div className="flex items-center justify-center h-full text-sm text-gray-400 dark:text-gray-500">
-              Add stacks and select signals above to see chart data here.
+              {compareMode
+                ? "Add stacks, select a signal per stack, then click Fetch."
+                : "Select a stack, pick one or more signals, then click Fetch Data."}
             </div>
           )}
         </div>
-
       </div>
 
-      {/* ── KPI Cards (normal mode only) ── */}
-      {!compareMode && (
+      {/* KPI Cards — normal mode only */}
+      {!compareMode && kpiData.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {kpiData.map((kpi, index) => (
-            <div key={index} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow">
-              <p className="text-sm text-gray-500">{kpi.kpiName.replaceAll("_", " ")}</p>
+            <div
+              key={index}
+              className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"
+            >
+              <p className="text-sm text-gray-500">
+                {kpi.kpiName.replaceAll("_", " ")}
+              </p>
               <h3 className="text-xl font-bold text-gray-800 dark:text-white">
                 {kpi.kpiValue.toFixed(2)}
               </h3>
